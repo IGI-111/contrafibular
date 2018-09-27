@@ -2,29 +2,41 @@ use instruction::Instruction;
 
 pub struct Field {
     data: Vec<Instruction>,
+    width: usize,
+    height: usize,
 }
 
-pub const FIELD_WIDTH: usize = 80;
-pub const FIELD_HEIGHT: usize = 25;
+const DEFAULT_FIELD_WIDTH: usize = 80;
+const DEFAULT_FIELD_HEIGHT: usize = 25;
 pub type Pos = (usize, usize);
 
 impl Field {
-    pub fn from_str(prog: &str) -> Field {
-        let mut data = vec![Instruction::Noop; FIELD_WIDTH * FIELD_HEIGHT];
-        for (y, line) in prog.split('\n').enumerate() {
-            for (x, c) in line.chars().enumerate() {
-                data[x + y * FIELD_WIDTH] = Instruction::from_char(c);
+    pub fn from_bin(prog: &Vec<u8>) -> Field {
+        let mut data = vec![Instruction::Noop; DEFAULT_FIELD_WIDTH * DEFAULT_FIELD_HEIGHT];
+        for (y, line) in prog.split(|&b| b == b'\n').enumerate() {
+            for (x, &b) in line.iter().enumerate() {
+                data[x + y * DEFAULT_FIELD_WIDTH] = Instruction::from_u8(b);
             }
         }
-        Field { data }
+        Field {
+            data,
+            width: DEFAULT_FIELD_WIDTH,
+            height: DEFAULT_FIELD_HEIGHT,
+        }
     }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
     pub fn get(&self, (x, y): Pos) -> &Instruction {
-        &self.data[x + y * FIELD_WIDTH]
+        &self.data[x + y * self.width]
     }
     pub fn set(&mut self, (x, y): Pos, val: Instruction) {
-        self.data[x + y * FIELD_WIDTH] = val;
+        self.data[x + y * self.width] = val;
     }
-
-
 }
-

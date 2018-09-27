@@ -1,24 +1,25 @@
 use colored::*;
 use field::Field;
-use field::{FIELD_HEIGHT, FIELD_WIDTH};
 use instruction::Instruction;
 use rand::prelude::*;
 use std::fmt;
 use std::io;
 use std::io::BufRead;
+use std::io::Write;
+use termion::{clear, cursor};
 
 pub struct State {
     stack: Vec<u8>,
-    program: Field,
+    field: Field,
     position: (usize, usize),
     direction: Direction,
     string_mode: bool,
 }
 
 impl State {
-    pub fn with_field(program: Field) -> State {
+    pub fn with_field(field: Field) -> State {
         State {
-            program,
+            field,
             stack: Vec::new(),
             position: (0, 0),
             direction: Direction::Right,
@@ -31,23 +32,47 @@ impl State {
         Ok(())
     }
 
+    pub fn run_debug(&mut self) -> Result<(), RuntimeError> {
+        eprintln!(
+            "{}{}\
+             --------------------------------------------------------------------------------\n\
+             {:?}\n\
+             --------------------------------------------------------------------------------",
+            cursor::Goto(1, 1),
+            clear::All,
+            self
+        );
+        let stdin = io::stdin();
+        while self.tick()? {
+            io::stdout().flush().unwrap();
+            io::stderr().flush().unwrap();
+            eprintln!(
+                "{}{}\
+                 --------------------------------------------------------------------------------\n\
+                 {:?}\n\
+                 --------------------------------------------------------------------------------",
+                cursor::Goto(1, 1),
+                clear::All,
+                self
+            );
+            stdin.lock().lines().next().unwrap().unwrap().to_string();
+        }
+        Ok(())
+    }
+
     pub fn tick(&mut self) -> Result<bool, RuntimeError> {
         if self.string_mode {
-            match self.program.get(self.position) {
+            match self.field.get(self.position) {
                 Instruction::StringMode => {
                     self.string_mode = false;
                 }
 
                 ins => {
-                    let c = ins.to_char();
-
-                    let mut buf = [0];
-                    c.encode_utf8(&mut buf); // this is ASCII and therefore one byte
-                    self.stack.push(buf[0]);
+                    self.stack.push(ins.to_u8());
                 }
             }
         } else {
-            match self.program.get(self.position) {
+            match self.field.get(self.position) {
                 &Instruction::Push(n) => {
                     self.stack.push(n);
                 }
@@ -135,8 +160,8 @@ impl State {
                 Instruction::Swap => {
                     let a = self.try_pop()?;
                     let b = self.try_pop()?;
-                    self.stack.push(b);
                     self.stack.push(a);
+                    self.stack.push(b);
                 }
                 Instruction::Pop => {
                     self.try_pop()?;
@@ -155,19 +180,17 @@ impl State {
                 Instruction::Get => {
                     let y = self.try_pop()? as usize;
                     let x = self.try_pop()? as usize;
-                    let val = self.program.get((x, y));
+                    let val = self.field.get((x, y));
 
-                    let mut buf = [0];
-                    val.to_char().encode_utf8(&mut buf); // this is ASCII and therefore one byte
-                    self.stack.push(buf[0]);
+                    self.stack.push(val.to_u8());
                 }
                 Instruction::Put => {
                     let y = self.try_pop()? as usize;
                     let x = self.try_pop()? as usize;
                     let v = self.try_pop()?;
 
-                    let ins = Instruction::from_char(char::from(v));
-                    self.program.set((x, y), ins);
+                    let ins = Instruction::from_u8(v);
+                    self.field.set((x, y), ins);
                 }
                 Instruction::PushInt => {
                     print!("Enter a number: ");
@@ -204,8 +227,8 @@ impl State {
                 Instruction::End => {
                     return Ok(false);
                 }
-                &Instruction::Unknown(c) => {
-                    return Err(RuntimeError::InvalidInstruction(c));
+                &Instruction::Unknown(_) => {
+                    self.direction = self.direction.reflect();
                 }
             }
         }
@@ -218,7 +241,7 @@ impl State {
         if let Some(a) = self.stack.pop() {
             Ok(a)
         } else {
-            return Err(RuntimeError::EmptyStack);
+            Ok(0)
         }
     }
 
@@ -227,20 +250,20 @@ impl State {
         match self.direction {
             Direction::Up => {
                 if y == 0 {
-                    y = FIELD_HEIGHT - 1;
+                    y = self.field.height() - 1;
                 } else {
                     y = y - 1;
                 }
             }
             Direction::Down => {
-                if y == FIELD_HEIGHT - 1 {
+                if y == self.field.height() - 1 {
                     y = 0;
                 } else {
                     y = y + 1;
                 }
             }
             Direction::Right => {
-                if x == FIELD_WIDTH - 1 {
+                if x == self.field.width() - 1 {
                     x = 0;
                 } else {
                     x = x + 1;
@@ -248,7 +271,7 @@ impl State {
             }
             Direction::Left => {
                 if x == 0 {
-                    x = FIELD_WIDTH - 1;
+                    x = self.field.width() - 1;
                 } else {
                     x = x - 1;
                 }
@@ -261,33 +284,32 @@ impl State {
 quick_error! {
     #[derive(Debug)]
     pub enum RuntimeError {
-        EmptyStack {
-            description("Trying to pop on an empty stack.")
-        }
-        InvalidInstruction(ins: char) {
-            description("Trying to execute an unkown instruction.")
-                display("Trying to execute an unkown instruction: '{}'.", ins)
-        }
     }
 }
 
 impl fmt::Debug for State {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for y in 0..FIELD_HEIGHT {
-            for x in 0..FIELD_WIDTH {
-                let s = self.program.get((x, y)).to_char().to_string();
-                if (x, y) == self.position {
-                    write!(f, "{}", s.reversed())?;
+        for y in 0..self.field.height() {
+            for x in 0..self.field.width() {
+                let c = self.field.get((x, y)).to_u8() as char;
+                let st = if c.is_ascii() {
+                    c.to_string()
                 } else {
-                    write!(f, "{}", s)?;
+                    "�".to_string()
+                };
+
+                if (x, y) == self.position {
+                    write!(f, "{}", st.reversed())?;
+                } else {
+                    write!(f, "{}", st)?;
                 }
             }
             writeln!(f)?;
         }
         writeln!(
             f,
-            "Direction: {:?}\nString Mode: {:?}",
-            self.direction, self.string_mode
+            "Direction: {:?}\nString Mode: {:?}\nStack: {:?}",
+            self.direction, self.string_mode, self.stack
         )?;
         Ok(())
     }
@@ -299,4 +321,15 @@ enum Direction {
     Down,
     Left,
     Right,
+}
+
+impl Direction {
+    pub fn reflect(&self) -> Direction {
+        match self {
+            Direction::Up => Direction::Down,
+            Direction::Down => Direction::Up,
+            Direction::Right => Direction::Left,
+            Direction::Left => Direction::Right,
+        }
+    }
 }
