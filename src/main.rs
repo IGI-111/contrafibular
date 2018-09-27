@@ -4,6 +4,7 @@ extern crate quick_error;
 extern crate clap;
 extern crate rand;
 extern crate termion;
+extern crate itertools;
 
 mod field;
 mod instruction;

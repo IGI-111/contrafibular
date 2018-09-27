@@ -1,4 +1,5 @@
 use instruction::Instruction;
+use itertools::Itertools;
 
 pub struct Field {
     data: Vec<Instruction>,
@@ -12,6 +13,15 @@ pub type Pos = (usize, usize);
 
 impl Field {
     pub fn from_bin(prog: &Vec<u8>) -> Field {
+        // cleanup CRLF
+        let prog = prog.iter().tuple_windows().filter_map(|(a, b)| {
+            if *a == b'\r' && *b == b'\n' {
+                None
+            } else {
+                Some(a)
+            }
+        }).cloned().collect::<Vec<u8>>();
+
         let mut data = vec![Instruction::Noop; DEFAULT_FIELD_WIDTH * DEFAULT_FIELD_HEIGHT];
         for (y, line) in prog.split(|&b| b == b'\n').enumerate() {
             for (x, &b) in line.iter().enumerate() {

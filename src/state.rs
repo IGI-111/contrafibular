@@ -95,12 +95,40 @@ impl State {
                 Instruction::Divide => {
                     let a = self.try_pop()?;
                     let b = self.try_pop()?;
-                    self.stack.push(b / a);
+                    if a != 0 {
+                        self.stack.push(b / a);
+                    } else {
+                        let stdin = io::stdin();
+                        let res: u8 = stdin
+                            .lock()
+                            .lines()
+                            .next()
+                            .unwrap()
+                            .unwrap()
+                            .to_string()
+                            .parse()
+                            .unwrap();
+                        self.stack.push(res);
+                    }
                 }
                 Instruction::Modulo => {
                     let a = self.try_pop()?;
                     let b = self.try_pop()?;
-                    self.stack.push(b % a);
+                    if a != 0 {
+                        self.stack.push(b % a);
+                    } else {
+                        let stdin = io::stdin();
+                        let res: u8 = stdin
+                            .lock()
+                            .lines()
+                            .next()
+                            .unwrap()
+                            .unwrap()
+                            .to_string()
+                            .parse()
+                            .unwrap();
+                        self.stack.push(res);
+                    }
                 }
                 Instruction::Not => {
                     let a = self.try_pop()?;
@@ -193,7 +221,6 @@ impl State {
                     self.field.set((x, y), ins);
                 }
                 Instruction::PushInt => {
-                    print!("Enter a number: ");
                     let stdin = io::stdin();
                     let a: u8 = stdin
                         .lock()
@@ -207,7 +234,7 @@ impl State {
                     self.stack.push(a);
                 }
                 Instruction::PushChar => {
-                    print!("Enter a character: ");
+                    io::stdout().flush().unwrap();
                     let stdin = io::stdin();
                     let c: char = stdin
                         .lock()
