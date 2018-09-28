@@ -1,15 +1,18 @@
 use colored::*;
+use error::Result;
 use field::Field;
 use instruction::Instruction;
 use rand::prelude::*;
+use std::char;
 use std::fmt;
 use std::io;
 use std::io::BufRead;
+use std::io::Read;
 use std::io::Write;
 use termion::{clear, cursor};
 
 pub struct State {
-    stack: Vec<u8>,
+    stack: Vec<u32>,
     field: Field,
     position: (usize, usize),
     direction: Direction,
@@ -27,12 +30,12 @@ impl State {
         }
     }
 
-    pub fn run(&mut self) -> Result<(), RuntimeError> {
+    pub fn run(&mut self) -> Result<()> {
         while self.tick()? {}
         Ok(())
     }
 
-    pub fn run_debug(&mut self) -> Result<(), RuntimeError> {
+    pub fn run_debug(&mut self) -> Result<()> {
         eprintln!(
             "{}{}\
              --------------------------------------------------------------------------------\n\
@@ -60,7 +63,7 @@ impl State {
         Ok(())
     }
 
-    pub fn tick(&mut self) -> Result<bool, RuntimeError> {
+    pub fn tick(&mut self) -> Result<bool> {
         if self.string_mode {
             match self.field.get(self.position) {
                 Instruction::StringMode => {
@@ -68,7 +71,7 @@ impl State {
                 }
 
                 ins => {
-                    self.stack.push(ins.to_u8());
+                    self.stack.push(ins.to_u32());
                 }
             }
         } else {
@@ -78,65 +81,46 @@ impl State {
                 }
                 Instruction::Noop => {}
                 Instruction::Add => {
-                    let a = self.try_pop()?;
-                    let b = self.try_pop()?;
+                    let a = self.safe_pop();
+                    let b = self.safe_pop();
                     self.stack.push(a + b);
                 }
                 Instruction::Subtract => {
-                    let a = self.try_pop()?;
-                    let b = self.try_pop()?;
-                    self.stack.push(b - a);
+                    let a = self.safe_pop();
+                    let b = self.safe_pop();
+                    self.stack.push(match b.checked_sub(a) {
+                        Some(val) => val,
+                        None => 0,
+                    });
                 }
                 Instruction::Multiply => {
-                    let a = self.try_pop()?;
-                    let b = self.try_pop()?;
+                    let a = self.safe_pop();
+                    let b = self.safe_pop();
                     self.stack.push(a * b);
                 }
                 Instruction::Divide => {
-                    let a = self.try_pop()?;
-                    let b = self.try_pop()?;
-                    if a != 0 {
-                        self.stack.push(b / a);
-                    } else {
-                        let stdin = io::stdin();
-                        let res: u8 = stdin
-                            .lock()
-                            .lines()
-                            .next()
-                            .unwrap()
-                            .unwrap()
-                            .to_string()
-                            .parse()
-                            .unwrap();
-                        self.stack.push(res);
-                    }
+                    let a = self.safe_pop();
+                    let b = self.safe_pop();
+                    self.stack.push(match b.checked_div(a) {
+                        Some(val) => val,
+                        None => read_u32()?,
+                    });
                 }
                 Instruction::Modulo => {
-                    let a = self.try_pop()?;
-                    let b = self.try_pop()?;
-                    if a != 0 {
-                        self.stack.push(b % a);
-                    } else {
-                        let stdin = io::stdin();
-                        let res: u8 = stdin
-                            .lock()
-                            .lines()
-                            .next()
-                            .unwrap()
-                            .unwrap()
-                            .to_string()
-                            .parse()
-                            .unwrap();
-                        self.stack.push(res);
-                    }
+                    let a = self.safe_pop();
+                    let b = self.safe_pop();
+                    self.stack.push(match b.checked_rem(a) {
+                        Some(val) => val,
+                        None => read_u32()?,
+                    });
                 }
                 Instruction::Not => {
-                    let a = self.try_pop()?;
+                    let a = self.safe_pop();
                     self.stack.push(if a == 0 { 1 } else { 0 });
                 }
                 Instruction::Greater => {
-                    let a = self.try_pop()?;
-                    let b = self.try_pop()?;
+                    let a = self.safe_pop();
+                    let b = self.safe_pop();
                     self.stack.push(if b > a { 1 } else { 0 });
                 }
                 Instruction::Right => {
@@ -162,7 +146,7 @@ impl State {
                     }
                 }
                 Instruction::HorizontalIf => {
-                    let a = self.try_pop()?;
+                    let a = self.safe_pop();
                     self.direction = if a == 0 {
                         Direction::Right
                     } else {
@@ -170,7 +154,7 @@ impl State {
                     }
                 }
                 Instruction::VerticalIf => {
-                    let a = self.try_pop()?;
+                    let a = self.safe_pop();
                     self.direction = if a == 0 {
                         Direction::Down
                     } else {
@@ -181,75 +165,52 @@ impl State {
                     self.string_mode = true;
                 }
                 Instruction::Dup => {
-                    let a = self.try_pop()?;
+                    let a = self.safe_pop();
                     self.stack.push(a);
                     self.stack.push(a);
                 }
                 Instruction::Swap => {
-                    let a = self.try_pop()?;
-                    let b = self.try_pop()?;
+                    let a = self.safe_pop();
+                    let b = self.safe_pop();
                     self.stack.push(a);
                     self.stack.push(b);
                 }
                 Instruction::Pop => {
-                    self.try_pop()?;
+                    self.safe_pop();
                 }
                 Instruction::PopInt => {
-                    let a = self.try_pop()?;
+                    let a = self.safe_pop();
                     print!("{} ", a);
                 }
                 Instruction::PopChar => {
-                    let a = self.try_pop()?;
-                    print!("{}", char::from(a));
+                    let a = self.safe_pop();
+                    print!("{}", char::from_u32(a).unwrap_or('�'));
                 }
                 Instruction::Bridge => {
                     self.step();
                 }
                 Instruction::Get => {
-                    let y = self.try_pop()? as usize;
-                    let x = self.try_pop()? as usize;
+                    let y = self.safe_pop() as usize;
+                    let x = self.safe_pop() as usize;
                     let val = self.field.get((x, y));
 
-                    self.stack.push(val.to_u8());
+                    self.stack.push(val.to_u32());
                 }
                 Instruction::Put => {
-                    let y = self.try_pop()? as usize;
-                    let x = self.try_pop()? as usize;
-                    let v = self.try_pop()?;
+                    let y = self.safe_pop() as usize;
+                    let x = self.safe_pop() as usize;
+                    let v = self.safe_pop();
 
-                    let ins = Instruction::from_u8(v);
+                    let ins = Instruction::from_u32(v);
                     self.field.set((x, y), ins);
                 }
                 Instruction::PushInt => {
-                    let stdin = io::stdin();
-                    let a: u8 = stdin
-                        .lock()
-                        .lines()
-                        .next()
-                        .unwrap()
-                        .unwrap()
-                        .to_string()
-                        .parse()
-                        .unwrap();
+                    let a = read_u32()?;
                     self.stack.push(a);
                 }
                 Instruction::PushChar => {
-                    io::stdout().flush().unwrap();
-                    let stdin = io::stdin();
-                    let c: char = stdin
-                        .lock()
-                        .lines()
-                        .next()
-                        .unwrap()
-                        .unwrap()
-                        .to_string()
-                        .chars()
-                        .next()
-                        .unwrap();
-
-                    let mut buf = [0];
-                    c.encode_utf8(&mut buf); // this is ASCII and therefore one byte
-                    self.stack.push(buf[0]);
+                    let c = read_char()?;
+                    self.stack.push(c as u32);
                 }
                 Instruction::End => {
                     return Ok(false);
@@ -264,12 +225,8 @@ impl State {
         Ok(true)
     }
 
-    fn try_pop(&mut self) -> Result<u8, RuntimeError> {
-        if let Some(a) = self.stack.pop() {
-            Ok(a)
-        } else {
-            Ok(0)
-        }
+    fn safe_pop(&mut self) -> u32 {
+        self.stack.pop().unwrap_or(0)
     }
 
     fn step(&mut self) {
@@ -308,22 +265,12 @@ impl State {
     }
 }
 
-quick_error! {
-    #[derive(Debug)]
-    pub enum RuntimeError {
-    }
-}
-
 impl fmt::Debug for State {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for y in 0..self.field.height() {
             for x in 0..self.field.width() {
-                let c = self.field.get((x, y)).to_u8() as char;
-                let st = if c.is_ascii() {
-                    c.to_string()
-                } else {
-                    "�".to_string()
-                };
+                let c = char::from_u32(self.field.get((x, y)).to_u32()).unwrap_or('�');
+                let st = c.to_string();
 
                 if (x, y) == self.position {
                     write!(f, "{}", st.reversed())?;
@@ -335,8 +282,8 @@ impl fmt::Debug for State {
         }
         writeln!(
             f,
-            "Direction: {:?}\nString Mode: {:?}\nStack: {:?}",
-            self.direction, self.string_mode, self.stack
+            "Direction: {:?}\nString Mode: {:?}\nStack: {:?}\nCurrent Instruction: {:?}",
+            self.direction, self.string_mode, self.stack, self.field.get(self.position)
         )?;
         Ok(())
     }
@@ -359,4 +306,26 @@ impl Direction {
             Direction::Left => Direction::Right,
         }
     }
+}
+
+fn read_u32() -> Result<u32> {
+    io::stdout().flush()?;
+    let stdin = io::stdin();
+    let res = stdin
+        .lock()
+        .lines()
+        .next()
+        .unwrap()?
+        .to_string()
+        .parse()
+        .unwrap();
+    Ok(res)
+}
+
+fn read_char() -> Result<char> {
+    io::stdout().flush()?;
+    let stdin = io::stdin();
+    let mut buf = [0];
+    stdin.lock().read(&mut buf)?;
+    Ok(char::from(buf[0]))
 }
