@@ -138,7 +138,7 @@ impl Instruction {
                 b'&' => Instruction::PushInt,
                 b'~' => Instruction::PushChar,
                 b'@' => Instruction::End,
-                b => Instruction::Unknown(b as u32),
+                _ => Instruction::Unknown(b),
             }
         } else {
             Instruction::Unknown(b)

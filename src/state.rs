@@ -101,18 +101,12 @@ impl State {
                 Instruction::Divide => {
                     let a = self.safe_pop();
                     let b = self.safe_pop();
-                    self.stack.push(match b.checked_div(a) {
-                        Some(val) => val,
-                        None => read_u32()?,
-                    });
+                    self.stack.push(b.checked_div(a).unwrap_or(read_u32()?));
                 }
                 Instruction::Modulo => {
                     let a = self.safe_pop();
                     let b = self.safe_pop();
-                    self.stack.push(match b.checked_rem(a) {
-                        Some(val) => val,
-                        None => read_u32()?,
-                    });
+                    self.stack.push(b.checked_rem(a).unwrap_or(read_u32()?));
                 }
                 Instruction::Not => {
                     let a = self.safe_pop();
