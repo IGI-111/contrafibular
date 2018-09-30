@@ -7,7 +7,6 @@ extern crate rand;
 extern crate termion;
 
 mod field;
-mod instruction;
 mod state;
 mod error;
 
@@ -38,7 +37,7 @@ fn run() -> Result<()> {
     let mut data = Vec::new();
     f.read_to_end(&mut data)
         .expect("something went wrong reading the file");
-    let mut state = State::with_field(Field::from_bin(&data)?);
+    let mut state = State::with_field(Field::from_bin(&data));
 
     if matches.is_present("debug") {
         state.run_debug()

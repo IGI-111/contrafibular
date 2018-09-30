@@ -1,7 +1,6 @@
 use colored::*;
 use error::Result;
 use field::Field;
-use instruction::Instruction;
 use rand::prelude::*;
 use std::char;
 use std::fmt;
@@ -10,11 +9,12 @@ use std::io::BufRead;
 use std::io::Read;
 use std::io::Write;
 use termion::{clear, cursor};
+use field::Pos;
 
 pub struct State {
-    stack: Vec<u32>,
+    stack: Vec<i64>,
     field: Field,
-    position: (usize, usize),
+    position: Pos,
     direction: Direction,
     string_mode: bool,
 }
@@ -66,26 +66,26 @@ impl State {
     pub fn tick(&mut self) -> Result<bool> {
         if self.string_mode {
             match self.field.get(self.position) {
-                Instruction::StringMode => {
+                b'"' => {
                     self.string_mode = false;
                 }
 
                 ins => {
-                    self.stack.push(ins.to_u32());
+                    self.stack.push(ins as i64);
                 }
             }
         } else {
             match self.field.get(self.position) {
-                &Instruction::Push(n) => {
-                    self.stack.push(n);
+                n @ b'0'...b'9' => {
+                    self.stack.push((n - b'0') as i64);
                 }
-                Instruction::Noop => {}
-                Instruction::Add => {
+                b' ' => {}
+                b'+' => {
                     let a = self.safe_pop();
                     let b = self.safe_pop();
                     self.stack.push(a + b);
                 }
-                Instruction::Subtract => {
+                b'-' => {
                     let a = self.safe_pop();
                     let b = self.safe_pop();
                     self.stack.push(match b.checked_sub(a) {
@@ -93,43 +93,43 @@ impl State {
                         None => 0,
                     });
                 }
-                Instruction::Multiply => {
+                b'*' => {
                     let a = self.safe_pop();
                     let b = self.safe_pop();
                     self.stack.push(a * b);
                 }
-                Instruction::Divide => {
+                b'/' => {
                     let a = self.safe_pop();
                     let b = self.safe_pop();
-                    self.stack.push(b.checked_div(a).unwrap_or(read_u32()?));
+                    self.stack.push(b.checked_div(a).unwrap_or(0));//read_u32()?));
                 }
-                Instruction::Modulo => {
+                b'%' => {
                     let a = self.safe_pop();
                     let b = self.safe_pop();
-                    self.stack.push(b.checked_rem(a).unwrap_or(read_u32()?));
+                    self.stack.push(b.checked_rem(a).unwrap_or(0));//read_u32()?));
                 }
-                Instruction::Not => {
+                b'!' => {
                     let a = self.safe_pop();
                     self.stack.push(if a == 0 { 1 } else { 0 });
                 }
-                Instruction::Greater => {
+                b'`' => {
                     let a = self.safe_pop();
                     let b = self.safe_pop();
                     self.stack.push(if b > a { 1 } else { 0 });
                 }
-                Instruction::Right => {
+                b'>' => {
                     self.direction = Direction::Right;
                 }
-                Instruction::Left => {
+                b'<' => {
                     self.direction = Direction::Left;
                 }
-                Instruction::Up => {
+                b'^' => {
                     self.direction = Direction::Up;
                 }
-                Instruction::Down => {
+                b'v' => {
                     self.direction = Direction::Down;
                 }
-                Instruction::Random => {
+                b'?' => {
                     let mut rng = thread_rng();
                     self.direction = match rng.gen_range(0, 4) {
                         0 => Direction::Up,
@@ -139,7 +139,7 @@ impl State {
                         _ => panic!("Number out of Range"),
                     }
                 }
-                Instruction::HorizontalIf => {
+                b'_' => {
                     let a = self.safe_pop();
                     self.direction = if a == 0 {
                         Direction::Right
@@ -147,7 +147,7 @@ impl State {
                         Direction::Left
                     }
                 }
-                Instruction::VerticalIf => {
+                b'|' => {
                     let a = self.safe_pop();
                     self.direction = if a == 0 {
                         Direction::Down
@@ -155,61 +155,62 @@ impl State {
                         Direction::Up
                     }
                 }
-                Instruction::StringMode => {
+                b'"' => {
                     self.string_mode = true;
                 }
-                Instruction::Dup => {
+                b':' => {
                     let a = self.safe_pop();
                     self.stack.push(a);
                     self.stack.push(a);
                 }
-                Instruction::Swap => {
+                b'\\' => {
                     let a = self.safe_pop();
                     let b = self.safe_pop();
                     self.stack.push(a);
                     self.stack.push(b);
                 }
-                Instruction::Pop => {
+                b'$' => {
                     self.safe_pop();
                 }
-                Instruction::PopInt => {
+                b'.' => {
                     let a = self.safe_pop();
                     print!("{} ", a);
                 }
-                Instruction::PopChar => {
+                b',' => {
                     let a = self.safe_pop();
-                    print!("{}", char::from_u32(a).unwrap_or('�'));
+                    print!("{}", char::from(a as u8));
                 }
-                Instruction::Bridge => {
+                b'#' => {
                     self.step();
                 }
-                Instruction::Get => {
+                b'g' => {
                     let y = self.safe_pop() as usize;
                     let x = self.safe_pop() as usize;
                     let val = self.field.get((x, y));
 
-                    self.stack.push(val.to_u32());
+                    self.stack.push(val as i64);
                 }
-                Instruction::Put => {
+                b'p' => {
                     let y = self.safe_pop() as usize;
                     let x = self.safe_pop() as usize;
                     let v = self.safe_pop();
 
-                    let ins = Instruction::from_u32(v);
-                    self.field.set((x, y), ins);
+                    self.field.set((x, y), v as u8);
                 }
-                Instruction::PushInt => {
-                    let a = read_u32()?;
+                b'&' => {
+                    let a = read_i64()?;
                     self.stack.push(a);
                 }
-                Instruction::PushChar => {
+                b'~' => {
                     let c = read_char()?;
-                    self.stack.push(c as u32);
+                    let mut buf = [ 0 ];
+                    c.encode_utf8(&mut buf);
+                    self.stack.push(buf[0] as i64);
                 }
-                Instruction::End => {
+                b'@' => {
                     return Ok(false);
                 }
-                &Instruction::Unknown(_) => {
+                _ => {
                     self.direction = self.direction.reflect();
                 }
             }
@@ -219,7 +220,7 @@ impl State {
         Ok(true)
     }
 
-    fn safe_pop(&mut self) -> u32 {
+    fn safe_pop(&mut self) -> i64 {
         self.stack.pop().unwrap_or(0)
     }
 
@@ -263,7 +264,7 @@ impl fmt::Debug for State {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for y in 0..self.field.height() {
             for x in 0..self.field.width() {
-                let c = char::from_u32(self.field.get((x, y)).to_u32()).unwrap_or('�');
+                let c = char::from(self.field.get((x, y)));
                 let st = c.to_string();
 
                 if (x, y) == self.position {
@@ -302,7 +303,7 @@ impl Direction {
     }
 }
 
-fn read_u32() -> Result<u32> {
+fn read_i64() -> Result<i64> {
     io::stdout().flush()?;
     let stdin = io::stdin();
     let res = stdin
