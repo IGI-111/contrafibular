@@ -1,15 +1,13 @@
 use colored::*;
 use error::Result;
 use field::Field;
+use field::Pos;
 use rand::prelude::*;
 use std::char;
 use std::fmt;
 use std::io;
-use std::io::BufRead;
-use std::io::Read;
-use std::io::Write;
+use std::io::{BufRead, Read, Write};
 use termion::{clear, cursor};
-use field::Pos;
 
 pub struct State {
     stack: Vec<i64>,
@@ -46,9 +44,11 @@ impl State {
             self
         );
         let stdin = io::stdin();
+        let stdout = io::stdout();
+        let stderr = io::stderr();
         while self.tick()? {
-            io::stdout().flush().unwrap();
-            io::stderr().flush().unwrap();
+            stdout.lock().flush()?;
+            stderr.lock().flush()?;
             eprintln!(
                 "{}{}\
                  --------------------------------------------------------------------------------\n\
@@ -58,7 +58,7 @@ impl State {
                 clear::All,
                 self
             );
-            stdin.lock().lines().next().unwrap().unwrap().to_string();
+            stdin.lock().lines().next().unwrap()?.to_string();
         }
         Ok(())
     }
@@ -71,13 +71,13 @@ impl State {
                 }
 
                 ins => {
-                    self.stack.push(ins as i64);
+                    self.stack.push(i64::from(ins));
                 }
             }
         } else {
             match self.field.get(self.position) {
                 n @ b'0'...b'9' => {
-                    self.stack.push((n - b'0') as i64);
+                    self.stack.push(i64::from(n - b'0'));
                 }
                 b' ' => {}
                 b'+' => {
@@ -101,12 +101,12 @@ impl State {
                 b'/' => {
                     let a = self.safe_pop();
                     let b = self.safe_pop();
-                    self.stack.push(b.checked_div(a).unwrap_or(0));//read_u32()?));
+                    self.stack.push(b.checked_div(a).unwrap_or(0)); //read_u32()?));
                 }
                 b'%' => {
                     let a = self.safe_pop();
                     let b = self.safe_pop();
-                    self.stack.push(b.checked_rem(a).unwrap_or(0));//read_u32()?));
+                    self.stack.push(b.checked_rem(a).unwrap_or(0)); //read_u32()?));
                 }
                 b'!' => {
                     let a = self.safe_pop();
@@ -188,7 +188,7 @@ impl State {
                     let x = self.safe_pop() as usize;
                     let val = self.field.get((x, y));
 
-                    self.stack.push(val as i64);
+                    self.stack.push(i64::from(val));
                 }
                 b'p' => {
                     let y = self.safe_pop() as usize;
@@ -203,9 +203,9 @@ impl State {
                 }
                 b'~' => {
                     let c = read_char()?;
-                    let mut buf = [ 0 ];
+                    let mut buf = [0];
                     c.encode_utf8(&mut buf);
-                    self.stack.push(buf[0] as i64);
+                    self.stack.push(i64::from(buf[0]));
                 }
                 b'@' => {
                     return Ok(false);
@@ -231,28 +231,28 @@ impl State {
                 if y == 0 {
                     y = self.field.height() - 1;
                 } else {
-                    y = y - 1;
+                    y -= 1;
                 }
             }
             Direction::Down => {
                 if y == self.field.height() - 1 {
                     y = 0;
                 } else {
-                    y = y + 1;
+                    y += 1;
                 }
             }
             Direction::Right => {
                 if x == self.field.width() - 1 {
                     x = 0;
                 } else {
-                    x = x + 1;
+                    x += 1;
                 }
             }
             Direction::Left => {
                 if x == 0 {
                     x = self.field.width() - 1;
                 } else {
-                    x = x - 1;
+                    x -= 1;
                 }
             }
         }
@@ -278,7 +278,10 @@ impl fmt::Debug for State {
         writeln!(
             f,
             "Direction: {:?}\nString Mode: {:?}\nStack: {:?}\nCurrent Instruction: {:?}",
-            self.direction, self.string_mode, self.stack, self.field.get(self.position)
+            self.direction,
+            self.string_mode,
+            self.stack,
+            self.field.get(self.position)
         )?;
         Ok(())
     }
@@ -304,23 +307,27 @@ impl Direction {
 }
 
 fn read_i64() -> Result<i64> {
-    io::stdout().flush()?;
+    loop {
+        let st = read_string()?.parse();
+        if let Ok(parsed) = st {
+            return Ok(parsed);
+        }
+    }
+}
+
+fn read_string() -> Result<String> {
+    let stdout = io::stdout();
     let stdin = io::stdin();
-    let res = stdin
-        .lock()
-        .lines()
-        .next()
-        .unwrap()?
-        .to_string()
-        .parse()
-        .unwrap();
+    stdout.lock().flush()?;
+    let res = stdin.lock().lines().next().unwrap()?.to_string();
     Ok(res)
 }
 
 fn read_char() -> Result<char> {
-    io::stdout().flush()?;
+    let stdout = io::stdout();
     let stdin = io::stdin();
+    stdout.lock().flush()?;
     let mut buf = [0];
-    stdin.lock().read(&mut buf)?;
+    stdin.lock().read_exact(&mut buf)?;
     Ok(char::from(buf[0]))
 }

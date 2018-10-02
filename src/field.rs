@@ -11,7 +11,7 @@ const DEFAULT_FIELD_HEIGHT: usize = 25;
 pub type Pos = (usize, usize);
 
 impl Field {
-    pub fn from_bin(prog: &Vec<u8>) -> Field {
+    pub fn from_bin(prog: &[u8]) -> Field {
         // cleanup CRLF
         let prog = prog
             .iter()
