@@ -35,12 +35,13 @@ impl State {
 
     pub fn run_debug(&mut self) -> Result<()> {
         eprintln!(
-            "{}{}\
+            "{}{}{}\
              --------------------------------------------------------------------------------\n\
              {:?}\n\
              --------------------------------------------------------------------------------",
-            cursor::Goto(1, 1),
             clear::All,
+            cursor::Hide,
+            cursor::Goto(1, 1),
             self
         );
         let stdin = io::stdin();
@@ -50,12 +51,11 @@ impl State {
             stdout.lock().flush()?;
             stderr.lock().flush()?;
             eprintln!(
-                "{}{}\
+                "{}\
                  --------------------------------------------------------------------------------\n\
                  {:?}\n\
                  --------------------------------------------------------------------------------",
                 cursor::Goto(1, 1),
-                clear::All,
                 self
             );
             stdin.lock().lines().next().unwrap()?.to_string();
@@ -277,11 +277,15 @@ impl fmt::Debug for State {
         }
         writeln!(
             f,
-            "Direction: {:?}\nString Mode: {:?}\nStack: {:?}\nCurrent Instruction: {:?}",
+            "Direction: {:?}{}\nString Mode: {:?}{}\nStack: {:?}{}\nCurrent Instruction: {:?}{}",
             self.direction,
+            clear::UntilNewline,
             self.string_mode,
+            clear::UntilNewline,
             self.stack,
-            self.field.get(self.position)
+            clear::UntilNewline,
+            self.field.get(self.position),
+            clear::AfterCursor,
         )?;
         Ok(())
     }
